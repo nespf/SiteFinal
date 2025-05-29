@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa da Biblioteca e Sensores</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.3.0/raphael.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/justgage/1.4.0/justgage.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+
+        .map-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: 20px auto;
+        }
+
+        .map-image {
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        table {
+            width: 50%;
+            margin: 20px auto;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+            font-size: 18px;
+        }
+
+        th {
+            background-color: #f4f4f4;
+        }
+
+        .available {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        .occupied {
+            background-color: #D32F2F;
+            color: white;
+        }
+
+        .gauges-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-top: 40px;
+        }
+
+        .gauge-container {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h3>Mapa da Biblioteca</h3>
+
+    <div class="map-container">
+        <img src="https://livecampus.web.ua.pt/wp-content/uploads/2025/03/Mesas-Biblioteca-2.png" class="map-image" alt="Mapa da Biblioteca">
+        <canvas id="overlay"></canvas>
+    </div>
+
+    <h3>Disponibilidade dos Lugares</h3>
+    <table id="seat-table">
+        <tr>
+            <th>Lugar</th>
+            <th>Status</th>
+        </tr>
+    </table>
+
+    <h3>Monitoramento do Ambiente</h3>
+    <div class="gauges-container">
+        <div class="gauge-container">
+            <h3>CO₂ (ppm)</h3>
+            <div id="co2Gauge" style="width:200px; height:160px;"></div>
+        </div>
+
+        <div class="gauge-container">
+            <h3>Temperatura (°C)</h3>
+            <div id="tempGauge" style="width:200px; height:160px;"></div>
+        </div>
+
+        <div class="gauge-container">
+            <h3>Ruído (dB)</h3>
+            <div id="noiseGauge" style="width:200px; height:160px;"></div>
+        </div>
+    </div>
+
+    <script>
+        const apiUrl  = "https://web-production-c6f2.up.railway.app/api/seats";
+        const apiUrl2 = "https://web-production-c6f2.up.railway.app/api/environment";
+
+
+        const seatPositions = {
+            1011: { x: 50, y: 65 },
+            1012: { x: 130, y: 64 },
+            1013: { x: 207, y: 64 },
+            1014: { x: 280, y: 64 },
+        };
+
+        function fetchSeatData() {
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    updateTable(data);
+                    drawSeatIndicators(data);
+                })
+                .catch(error => console.error("Erro ao buscar dados:", error));
+        }
+
+        function updateTable(data) {
+            const tableBody = document.getElementById("seat-table");
+            tableBody.innerHTML = `
+                <tr>
+                    <th>Lugar</th>
+                    <th>Status</th>
+                </tr>
+            `;
+
+            Object.keys(seatPositions).forEach(seatId => {
+                let status = data[seatId] || "available";
+
+                let row = document.createElement("tr");
+                let seatNumber = document.createElement("td");
+                let seatStatus = document.createElement("td");
+
+                seatNumber.textContent = seatId;
+                if (status === "occupied") {
+                    seatStatus.textContent = "Ocupado";
+                    seatStatus.classList.add("occupied");
+                } else {
+                    seatStatus.textContent = "Disponível";
+                    seatStatus.classList.add("available");
+                }
+
+                row.appendChild(seatNumber);
+                row.appendChild(seatStatus);
+                tableBody.appendChild(row);
+            });
+        }
+
+        function drawSeatIndicators(data) {
+            const canvas = document.getElementById("overlay");
+            const ctx = canvas.getContext("2d");
+            const img = document.querySelector(".map-image");
+
+            canvas.width = img.clientWidth;
+            canvas.height = img.clientHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            Object.keys(seatPositions).forEach(seatId => {
+                const { x, y } = seatPositions[seatId];
+                let status = data[seatId] || "available";
+
+                ctx.beginPath();
+                ctx.arc(x, y, 10, 0, 2 * Math.PI);
+                ctx.fillStyle = (status === "occupied") ? "red" : "green";
+                ctx.fill();
+                ctx.closePath();
+            });
+        }
+
+        // Variáveis globais para os gauges
+        let co2Gauge, tempGauge, noiseGauge;
+
+        function createGauges() {
+            co2Gauge = new JustGage({
+                id: "co2Gauge",
+                value: 0,
+                min: 400,
+                max: 1000,
+                title: "CO₂",
+                label: "",
+                gaugeColor: "#ddd",
+                levelColors: ["#00FF00", "#FFFF00", "#FF0000"],
+                pointer: true
+            });
+
+            tempGauge = new JustGage({
+                id: "tempGauge",
+                value: 0,
+                min: 18,
+                max: 30,
+                title: "Temperatura",
+                label: "",
+                gaugeColor: "#ddd",
+                levelColors: ["#00BFFF", "#FFFF00", "#FF4500"],
+                pointer: true
+            });
+
+            noiseGauge = new JustGage({
+                id: "noiseGauge",
+                value: 0,
+                min: 30,
+                max: 60,
+                title: "Ruído",
+                label: "",
+                gaugeColor: "#ddd",
+                levelColors: ["#00FF00", "#FFA500", "#FF0000"],
+                pointer: true
+            });
+        }
+
+        function updateGauges() {
+            fetch(apiUrl2)
+                .then(response => response.json())
+                .then(data => {
+                    co2Gauge.refresh(data.CO2);
+                    tempGauge.refresh(data.Temperature);
+                    noiseGauge.refresh(data.Noise);
+                })
+                .catch(error => console.error("Erro ao buscar dados ambientais:", error));
+        }
+
+        // Inicializações
+        fetchSeatData();
+        setInterval(fetchSeatData, 2000);
+
+        createGauges();
+        updateGauges();
+        setInterval(updateGauges, 5000);
+    </script>
+
+</body>
+</html>
